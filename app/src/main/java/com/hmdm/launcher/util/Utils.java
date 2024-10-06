@@ -77,6 +77,35 @@ public class Utils {
         return BuildConfig.FLAVOR == null || BuildConfig.FLAVOR.equals("") ? "opensource" : BuildConfig.FLAVOR;
     }
 
+    // Automatically grant permission to get phone state (for IMEI and serial)
+    @TargetApi(Build.VERSION_CODES.M)
+    public static boolean autoGrantPhonePermission(Context context) {
+        try {
+            DevicePolicyManager devicePolicyManager = (DevicePolicyManager) context.getSystemService(
+                    Context.DEVICE_POLICY_SERVICE);
+            ComponentName adminComponentName = LegacyUtils.getAdminComponentName(context);
+
+            if (devicePolicyManager.getPermissionGrantState(adminComponentName,
+                    context.getPackageName(), Manifest.permission.READ_PHONE_STATE) != DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED) {
+                boolean success = devicePolicyManager.setPermissionGrantState(adminComponentName,
+                        context.getPackageName(), Manifest.permission.READ_PHONE_STATE, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED);
+                if (!success) {
+                    return false;
+                }
+            }
+        } catch (NoSuchMethodError e) {
+            // This exception is raised on Android 5.1
+            e.printStackTrace();
+            return false;
+        } catch (/* SecurityException */ Exception e) {
+            // No active admin ComponentInfo (not sure why could that happen)
+            e.printStackTrace();
+            return false;
+        }
+        Log.i(Const.LOG_TAG, "READ_PHONE_STATE automatically granted");
+        return true;
+    }
+
     // Automatically get dangerous permissions
     // Notice: default (null) app permission strategy is "Grant all"
     @TargetApi(Build.VERSION_CODES.M)
@@ -327,7 +356,11 @@ public class Utils {
     public static boolean factoryReset(Context context) {
         try {
             DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(Context.DEVICE_POLICY_SERVICE);
-            dpm.wipeData(0);
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                dpm.wipeData(0);
+            } else {
+                dpm.wipeDevice(0);
+            }
             return true;
         } catch (Exception e) {
             return false;
@@ -555,11 +588,14 @@ public class Utils {
 
         try {
             if (lock == null || !lock) {
+                Log.d(Const.LOG_TAG, "Unlocking volume");
                 devicePolicyManager.clearUserRestriction(adminComponentName, UserManager.DISALLOW_ADJUST_VOLUME);
             } else {
+                Log.d(Const.LOG_TAG, "Locking volume");
                 devicePolicyManager.addUserRestriction(adminComponentName, UserManager.DISALLOW_ADJUST_VOLUME);
             }
         } catch (Exception e) {
+            Log.w(Const.LOG_TAG, "Failed to lock/unlock volume: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
@@ -586,6 +622,7 @@ public class Utils {
             }
             return true;
         } catch (Exception e) {
+            Log.w(Const.LOG_TAG, "Failed to set volume: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
